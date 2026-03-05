@@ -66,6 +66,8 @@ let playerDir = 'right';
 let moveType = 'step';
 let deathPopupTime = 0;
 let shakeSeed = 0;
+let lastRenderTime = 0;
+let rafId = null;
 
 const debugMode = typeof location !== 'undefined' && new URLSearchParams(location.search).get('debug') === '1';
 
@@ -394,8 +396,10 @@ function handleTurn() {
 
 function init() {
     canvas = document.getElementById('game-canvas');
+    if (!canvas) return;
     ctx = canvas.getContext('2d');
     canvasWrapper = document.getElementById('canvas-wrapper');
+    if (!canvasWrapper || !ctx) return;
     scoreDisplay = document.getElementById('score');
     finalScoreDisplay = document.getElementById('final-score');
     startScreen = document.getElementById('start-screen');
@@ -432,6 +436,13 @@ function init() {
     btnTurn.addEventListener('touchstart', turnHandler, { passive: false });
 
     window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', function() { setTimeout(onResize, 150); });
+    window.addEventListener('pageshow', function(e) {
+        if (e.persisted) {
+            onResize();
+            rafId = requestAnimationFrame(gameLoop);
+        }
+    });
 
     createHills();
     resizeCanvas();
@@ -439,7 +450,14 @@ function init() {
     loadQuokkaHead();
     resetGame();
 
-    requestAnimationFrame(gameLoop);
+    requestAnimationFrame(function() {
+        if (canvasWrapper && (canvasWidth <= 0 || canvasHeight <= 0) && (canvasWrapper.clientWidth > 0 || canvasWrapper.clientHeight > 0)) {
+            resizeCanvas();
+            buildAllCaches(charHeadImg);
+        }
+    });
+
+    rafId = requestAnimationFrame(gameLoop);
 }
 
 function onResize() {
@@ -450,18 +468,20 @@ function onResize() {
 }
 
 function resizeCanvas() {
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const rect = canvasWrapper.getBoundingClientRect();
-    canvasWidth = rect.width;
-    canvasHeight = rect.height;
+    if (!canvasWrapper || !canvas || !ctx) return;
+    dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const cssW = canvasWrapper.clientWidth || 1;
+    const cssH = Math.max(1, canvasWrapper.clientHeight || 1);
 
-    canvas.width = canvasWidth * dpr;
-    canvas.height = canvasHeight * dpr;
-    canvas.style.width = canvasWidth + 'px';
-    canvas.style.height = canvasHeight + 'px';
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    canvas.width = Math.ceil(cssW * dpr);
+    canvas.height = Math.ceil(cssH * dpr);
 
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.scale(dpr, dpr);
+    canvasWidth = cssW;
+    canvasHeight = cssH;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 function createHills() {
@@ -1023,7 +1043,25 @@ function updateDebugPanel() {
     debugPanel.textContent = `dir: ${playerDir} | nextDir: ${nextDir || '-'}`;
 }
 
+function updateCanvasDebugInfo() {
+    if (!debugMode) return;
+    let el = document.getElementById('canvas-debug-info');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'canvas-debug-info';
+        el.style.cssText = 'position:fixed;top:4px;left:4px;font-size:9px;font-family:monospace;color:#333;background:rgba(255,255,255,0.85);padding:4px 6px;border-radius:4px;pointer-events:none;z-index:9999;';
+        document.body.appendChild(el);
+    }
+    el.textContent = 'w=' + (canvas ? canvas.width : 0) + ' h=' + (canvas ? canvas.height : 0) +
+        ' cssW=' + canvasWidth + ' cssH=' + canvasHeight +
+        ' dpr=' + dpr + ' t=' + Math.round(lastRenderTime || 0);
+}
+
 function gameLoop() {
+    lastRenderTime = performance.now();
+    rafId = requestAnimationFrame(gameLoop);
+
+    if (canvasWidth <= 0 || canvasHeight <= 0) return;
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
     if (gameState === 'start') {
@@ -1044,7 +1082,9 @@ function gameLoop() {
         updateDebugPanel();
     }
 
-    requestAnimationFrame(gameLoop);
+    if (debugMode) {
+        updateCanvasDebugInfo();
+    }
 }
 
 function updateGame() {
@@ -1094,4 +1134,8 @@ function gameOver() {
     gameoverScreen.classList.remove('hidden');
 }
 
-window.addEventListener('load', init);
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    init();
+}

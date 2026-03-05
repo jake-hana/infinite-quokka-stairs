@@ -22,9 +22,9 @@ body {
     overflow: hidden;
     background: linear-gradient(160deg, #6B9BD1 0%, #5DADE2 35%, #48C9B0 100%);
     min-height: 100vh;
-    min-height: 100dvh;
+    min-height: calc(var(--vh, 1vh) * 100);
     height: 100vh;
-    height: 100dvh;
+    height: calc(var(--vh, 1vh) * 100);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -44,10 +44,8 @@ body {
 #game-frame {
     position: relative;
     width: min(400px, 92vw);
-    height: min(700px, 88dvh);
-    height: min(700px, 88vh);
-    max-height: min(700px, 88dvh);
-    max-height: min(700px, 88vh);
+    height: min(700px, calc(var(--vh, 1vh) * 88));
+    max-height: min(700px, calc(var(--vh, 1vh) * 88));
     display: flex;
     flex-direction: column;
     background: linear-gradient(180deg, #E8F4F8 0%, #D5EBF5 100%);
@@ -80,7 +78,7 @@ body {
 
 #canvas-wrapper {
     flex: 1;
-    min-height: 0;
+    min-height: max(200px, calc(var(--vh, 1vh) * 30));
     overflow: hidden;
     background: #87CEEB;
     touch-action: none;
