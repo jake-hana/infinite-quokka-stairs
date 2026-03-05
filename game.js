@@ -1,6 +1,6 @@
 /* ============================================
    무한의 계단 - 쿼카의 모험
-   QuickQuokka 머리 + 몸통 합성, 오프스크린 캐시
+   QuickQuokka + 모바일 터치/스와이프
    ============================================ */
 
 const CONFIG = {
@@ -20,12 +20,15 @@ const CONFIG = {
     MOVE_DURATION_MS: 85,
     CHAR_WIDTH: 38,
     CHAR_HEIGHT: 46,
-    CACHE_HEIGHT: 128,
+    CACHE_HEIGHT: 192,
+    CHAR_VISUAL_SCALE: 1.5,
     BOUNCE_PX: 3,
     SQUASH_MIN: 0.96,
     SQUASH_MAX: 1.04,
     BODY_SWAY_PX: 2.5,
-    QUOKKA_HEAD_SVG: 'https://upload.wikimedia.org/wikipedia/commons/d/d9/QuickQuokka.svg'
+    QUOKKA_HEAD_SVG: 'https://upload.wikimedia.org/wikipedia/commons/d/d9/QuickQuokka.svg',
+    SWIPE_MIN_DIST: 50,
+    SWIPE_MAX_VERTICAL_RATIO: 0.6
 };
 
 let canvas, ctx, canvasWrapper;
@@ -42,7 +45,7 @@ let cameraY = 0;
 let gameSpeed = 1;
 let animationFrame = 0;
 let scoreDisplay, finalScoreDisplay, startScreen, gameoverScreen;
-let startBtn, restartBtn;
+let startBtn, restartBtn, btnLeft, btnRight;
 let dpr = 1;
 let charCache = null;
 let charHeadImg = null;
@@ -51,6 +54,8 @@ let moveStartTime = 0;
 let moveStartX = 0;
 let moveStartY = 0;
 let lastCacheDpr = 0;
+let swipeStartX = 0;
+let swipeStartY = 0;
 
 function roundRectFallback(x, y, w, h, r) {
     ctx.beginPath();
@@ -120,6 +125,29 @@ function drawBodyParts(cctx, cw, ch) {
     cctx.ellipse(bodyCx - bodyW * 0.2, bodyCy - bodyH * 0.15, bodyW * 0.25, bodyH * 0.35, 0, 0, Math.PI * 2);
     cctx.fill();
 
+    const armW = bodyW * 0.2;
+    const armH = bodyH * 0.35;
+    const armY = bodyCy - bodyH * 0.1;
+    const armDist = bodyW * 0.22;
+    cctx.fillStyle = '#B8956A';
+    cctx.strokeStyle = 'rgba(0,0,0,0.12)';
+    cctx.lineWidth = 1.5;
+    [1, -1].forEach(s => {
+        const ax = bodyCx + s * armDist;
+        cctx.beginPath();
+        cctx.ellipse(ax, armY, armW, armH, s * 0.25, 0, Math.PI * 2);
+        cctx.fill();
+        cctx.stroke();
+    });
+    cctx.fillStyle = 'rgba(0,0,0,0.04)';
+    cctx.strokeStyle = 'transparent';
+    [1, -1].forEach(s => {
+        const ax = bodyCx + s * armDist;
+        cctx.beginPath();
+        cctx.ellipse(ax + s * 3, armY + 2, armW * 0.5, armH * 0.4, s * 0.2, 0, Math.PI * 2);
+        cctx.fill();
+    });
+
     const legY = bodyBottom - ch * 0.08;
     const legH = ch * 0.12;
     const footH = ch * 0.05;
@@ -187,6 +215,17 @@ function loadQuokkaHead() {
     img.src = CONFIG.QUOKKA_HEAD_SVG;
 }
 
+function processDirectionInput(direction) {
+    if (gameState !== 'playing') return;
+    if (player.isFalling || player.isMoving) return;
+
+    const now = performance.now();
+    if (now < inputLockUntil) return;
+
+    inputLockUntil = now + CONFIG.INPUT_LOCK_MS;
+    tryMove(direction);
+}
+
 function init() {
     canvas = document.getElementById('game-canvas');
     ctx = canvas.getContext('2d');
@@ -197,10 +236,28 @@ function init() {
     gameoverScreen = document.getElementById('gameover-screen');
     startBtn = document.getElementById('start-btn');
     restartBtn = document.getElementById('restart-btn');
+    btnLeft = document.getElementById('btn-left');
+    btnRight = document.getElementById('btn-right');
 
     startBtn.addEventListener('click', startGame);
     restartBtn.addEventListener('click', startGame);
+
     document.addEventListener('keydown', handleKeyDown);
+
+    [btnLeft, btnRight].forEach((btn, i) => {
+        const dir = i === 0 ? 'left' : 'right';
+        const handler = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            processDirectionInput(dir);
+        };
+        btn.addEventListener('pointerdown', handler);
+        btn.addEventListener('touchstart', handler, { passive: false });
+    });
+
+    canvasWrapper.addEventListener('touchstart', handleSwipeStart, { passive: true });
+    canvasWrapper.addEventListener('touchend', handleSwipeEnd, { passive: true });
+
     window.addEventListener('resize', onResize);
 
     createHills();
@@ -210,6 +267,26 @@ function init() {
     resetGame();
 
     requestAnimationFrame(gameLoop);
+}
+
+function handleSwipeStart(e) {
+    if (e.touches.length === 1) {
+        swipeStartX = e.touches[0].clientX;
+        swipeStartY = e.touches[0].clientY;
+    }
+}
+
+function handleSwipeEnd(e) {
+    if (e.changedTouches.length !== 1) return;
+    const endX = e.changedTouches[0].clientX;
+    const endY = e.changedTouches[0].clientY;
+    const dx = endX - swipeStartX;
+    const dy = endY - swipeStartY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < CONFIG.SWIPE_MIN_DIST) return;
+    if (Math.abs(dy) > dist * CONFIG.SWIPE_MAX_VERTICAL_RATIO) return;
+    if (dx > 0) processDirectionInput('right');
+    else processDirectionInput('left');
 }
 
 function onResize() {
@@ -236,9 +313,10 @@ function resizeCanvas() {
 
 function createHills() {
     hills = [
-        { baseY: 0.75, amplitude: 50, freq: 0.012, parallax: 0.3, color: '#7DCEA0', alpha: 1 },
-        { baseY: 0.78, amplitude: 70, freq: 0.008, parallax: 0.5, color: '#52BE80', alpha: 0.9 },
-        { baseY: 0.82, amplitude: 90, freq: 0.005, parallax: 0.7, color: '#27AE60', alpha: 0.8 }
+        { baseY: 0.65, amplitude: 30, freq: 0.006, parallax: 0.15, color: '#8ECDD4', alpha: 0.45 },
+        { baseY: 0.72, amplitude: 55, freq: 0.009, parallax: 0.35, color: '#7DCEA0', alpha: 0.75 },
+        { baseY: 0.78, amplitude: 70, freq: 0.008, parallax: 0.5, color: '#52BE80', alpha: 0.95 },
+        { baseY: 0.84, amplitude: 85, freq: 0.005, parallax: 0.7, color: '#27AE60', alpha: 1 }
     ];
 }
 
@@ -332,16 +410,12 @@ function handleKeyDown(e) {
         e.preventDefault();
         return;
     }
-    if (gameState !== 'playing') return;
-    if (player.isFalling || player.isMoving) return;
-
-    const now = performance.now();
-    if (now < inputLockUntil) return;
-
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        inputLockUntil = now + CONFIG.INPUT_LOCK_MS;
-        tryMove(e.key === 'ArrowLeft' ? 'left' : 'right');
+        processDirectionInput('left');
+    } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        processDirectionInput('right');
     }
 }
 
@@ -394,13 +468,36 @@ function applyCameraTransform() {
 
 function drawBackground() {
     ctx.save();
-    const grad = ctx.createLinearGradient(0, 0, 0, canvasHeight);
-    grad.addColorStop(0, '#87CEEB');
-    grad.addColorStop(0.4, '#B0E0E6');
-    grad.addColorStop(0.75, '#98D8C8');
-    grad.addColorStop(1, '#52BE80');
-    ctx.fillStyle = grad;
+
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, canvasHeight);
+    skyGrad.addColorStop(0, '#4A90D9');
+    skyGrad.addColorStop(0.2, '#6BA3E8');
+    skyGrad.addColorStop(0.4, '#87CEEB');
+    skyGrad.addColorStop(0.55, '#B0E0E6');
+    skyGrad.addColorStop(0.7, '#98D8C8');
+    skyGrad.addColorStop(0.85, '#6BBF8A');
+    skyGrad.addColorStop(1, '#52BE80');
+    ctx.fillStyle = skyGrad;
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    const sunX = canvasWidth * 0.75;
+    const sunY = canvasHeight * 0.25;
+    const sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 120);
+    sunGrad.addColorStop(0, 'rgba(255,255,220,0.4)');
+    sunGrad.addColorStop(0.4, 'rgba(255,255,200,0.15)');
+    sunGrad.addColorStop(0.7, 'rgba(255,255,255,0.05)');
+    sunGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = sunGrad;
+    ctx.fillRect(sunX - 120, sunY - 120, 240, 240);
+
+    const sunX2 = canvasWidth * 0.2;
+    const sunY2 = canvasHeight * 0.35;
+    const sunGrad2 = ctx.createRadialGradient(sunX2, sunY2, 0, sunX2, sunY2, 80);
+    sunGrad2.addColorStop(0, 'rgba(255,255,255,0.2)');
+    sunGrad2.addColorStop(0.6, 'rgba(255,255,255,0.04)');
+    sunGrad2.addColorStop(1, 'transparent');
+    ctx.fillStyle = sunGrad2;
+    ctx.fillRect(sunX2 - 80, sunY2 - 80, 160, 160);
 
     hills.forEach(hill => {
         const parallaxY = cameraY * hill.parallax * 0.5;
@@ -408,12 +505,12 @@ function drawBackground() {
         ctx.fillStyle = hill.color;
         ctx.globalAlpha = hill.alpha;
         ctx.beginPath();
-        ctx.moveTo(-100, canvasHeight + 50);
-        for (let sx = -100; sx <= canvasWidth + 100; sx += 40) {
+        ctx.moveTo(-100, canvasHeight + 80);
+        for (let sx = -100; sx <= canvasWidth + 120; sx += 35) {
             const sy = baseY + Math.sin((sx + cameraX * 0.1) * hill.freq) * hill.amplitude;
             ctx.lineTo(sx, sy);
         }
-        ctx.lineTo(canvasWidth + 100, canvasHeight + 50);
+        ctx.lineTo(canvasWidth + 120, canvasHeight + 80);
         ctx.closePath();
         ctx.fill();
         ctx.globalAlpha = 1;
@@ -423,19 +520,68 @@ function drawBackground() {
 
 function drawClouds() {
     ctx.save();
-    const oy = (cameraY * 0.05) % 200;
-    const ox = (cameraX * 0.03) % 280;
-    for (let i = 0; i < 8; i++) {
-        const sx = ((i * 320 + ox) % (canvasWidth + 350)) - 80;
-        const sy = ((i * 110 + 40 - oy) % (canvasHeight + 120)) - 40;
-        if (sy < -50 || sy > canvasHeight + 50) continue;
-        ctx.globalAlpha = 0.9;
-        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    const t = animationFrame * 0.015;
+    const ox = (cameraX * 0.02) % 400;
+    const oxSmall = (cameraX * 0.05 + t * 20) % 350;
+
+    for (let i = 0; i < 5; i++) {
+        const sx = ((i * 380 + ox) % (canvasWidth + 400)) - 100;
+        const sy = ((i * 130 + 30 - cameraY * 0.03) % (canvasHeight * 0.5 + 80)) - 20;
+        if (sy < -60 || sy > canvasHeight * 0.6) continue;
+        ctx.globalAlpha = 0.92;
+        ctx.fillStyle = 'rgba(255,255,255,0.98)';
         ctx.beginPath();
-        ctx.arc(sx, sy, 35, 0, Math.PI * 2);
-        ctx.arc(sx + 45, sy - 8, 45, 0, Math.PI * 2);
-        ctx.arc(sx + 90, sy, 35, 0, Math.PI * 2);
+        ctx.arc(sx, sy, 42, 0, Math.PI * 2);
+        ctx.arc(sx + 52, sy - 10, 52, 0, Math.PI * 2);
+        ctx.arc(sx + 105, sy, 42, 0, Math.PI * 2);
         ctx.fill();
+    }
+
+    for (let i = 0; i < 6; i++) {
+        const sx = ((i * 180 + oxSmall) % (canvasWidth + 200)) - 50;
+        const sy = ((i * 95 + 80 - cameraY * 0.08) % (canvasHeight * 0.45 + 60)) + 20;
+        if (sy < -30 || sy > canvasHeight) continue;
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.beginPath();
+        ctx.arc(sx, sy, 22, 0, Math.PI * 2);
+        ctx.arc(sx + 28, sy - 5, 28, 0, Math.PI * 2);
+        ctx.arc(sx + 55, sy, 22, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+}
+
+function drawSkyDecorations() {
+    ctx.save();
+    const t = animationFrame * 0.02;
+    const seed = (n) => ((n * 7919 + 9973) % 10000) / 10000;
+
+    for (let i = 0; i < 12; i++) {
+        const px = (i * 234 + Math.floor(t * 50) % 200) % (canvasWidth + 100) - 20;
+        const py = (seed(i) * canvasHeight * 0.5 + (t * 30) % 200) % (canvasHeight * 0.55) + 10;
+        const pulse = 0.6 + 0.4 * Math.sin(t + i);
+        ctx.globalAlpha = 0.25 * pulse;
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.beginPath();
+        ctx.arc(px, py, 2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    const birdX = ((animationFrame * 0.8 + 1200) % (canvasWidth + 150)) - 50;
+    const birdY = canvasHeight * 0.15 + Math.sin(animationFrame * 0.1) * 8;
+    if (birdX > -30 && birdX < canvasWidth + 30) {
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = 'rgba(80,70,60,0.8)';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(birdX, birdY);
+        ctx.lineTo(birdX + 12, birdY - 4);
+        ctx.moveTo(birdX, birdY);
+        ctx.lineTo(birdX + 12, birdY + 4);
+        ctx.stroke();
     }
     ctx.globalAlpha = 1;
     ctx.restore();
@@ -513,13 +659,18 @@ function drawPlayer() {
     drawY += bounceY;
 
     if (charCache && charCache.width > 0) {
-        const drawW = w * squashX;
-        const drawH = h * squashY;
-        ctx.drawImage(charCache, x + (w - drawW) / 2, drawY + (h - drawH) / 2, drawW, drawH);
+        const drawW = w * squashX * CONFIG.CHAR_VISUAL_SCALE;
+        const drawH = h * squashY * CONFIG.CHAR_VISUAL_SCALE;
+        const drawYAnchor = player.worldY + player.height - drawH;
+        ctx.drawImage(charCache, x + (w - drawW) / 2, drawYAnchor + bounceY, drawW, drawH);
     } else {
         if (player.isFalling) ctx.globalAlpha = 0.85;
+        const vw = w * CONFIG.CHAR_VISUAL_SCALE * squashX;
+        const vh = h * CONFIG.CHAR_VISUAL_SCALE * squashY;
+        const fallbackY = player.worldY + player.height - vh + bounceY;
         ctx.save();
-        ctx.translate(x, drawY);
+        ctx.translate(x + (w - vw) / 2, fallbackY);
+        ctx.scale(CONFIG.CHAR_VISUAL_SCALE * squashX, CONFIG.CHAR_VISUAL_SCALE * squashY);
         drawBodyParts(ctx, w, h);
         const headR = Math.min(w, h) * 0.28;
         drawFallbackHead(ctx, w / 2, h * 0.32, headR);
@@ -558,10 +709,12 @@ function gameLoop() {
     if (gameState === 'start') {
         drawBackground();
         drawClouds();
+        drawSkyDecorations();
     } else if (gameState === 'playing') {
         updateGame();
         drawBackground();
         drawClouds();
+        drawSkyDecorations();
         drawStairs();
         drawParticles();
         drawPlayer();
