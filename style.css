@@ -4,6 +4,12 @@
     box-sizing: border-box;
 }
 
+:root {
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --vh: 1vh;
+}
+
 html, body {
     touch-action: none;
     -webkit-touch-callout: none;
@@ -17,10 +23,14 @@ body {
     background: linear-gradient(160deg, #6B9BD1 0%, #5DADE2 35%, #48C9B0 100%);
     min-height: 100vh;
     min-height: 100dvh;
+    height: 100vh;
+    height: 100dvh;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 12px;
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
 
 #game-container {
@@ -34,8 +44,10 @@ body {
 #game-frame {
     position: relative;
     width: min(400px, 92vw);
-    height: min(760px, 92vh);
-    max-height: min(760px, 92vh);
+    height: min(700px, 88dvh);
+    height: min(700px, 88vh);
+    max-height: min(700px, 88dvh);
+    max-height: min(700px, 88vh);
     display: flex;
     flex-direction: column;
     background: linear-gradient(180deg, #E8F4F8 0%, #D5EBF5 100%);
@@ -69,7 +81,6 @@ body {
 #canvas-wrapper {
     flex: 1;
     min-height: 0;
-    max-height: calc(min(760px, 92vh) - 140px);
     overflow: hidden;
     background: #87CEEB;
     touch-action: none;
@@ -85,10 +96,12 @@ body {
 #touch-controls {
     flex-shrink: 0;
     display: flex;
-    gap: 20px;
+    gap: 24px;
     justify-content: center;
     align-items: center;
     padding: 20px 24px;
+    padding-bottom: max(20px, calc(20px + env(safe-area-inset-bottom)));
+    min-height: 112px;
     background: linear-gradient(
         180deg,
         rgba(255, 255, 255, 0.25) 0%,
@@ -99,6 +112,8 @@ body {
     -webkit-backdrop-filter: blur(12px);
     border-top: 1px solid rgba(255, 255, 255, 0.6);
     touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 #touch-controls button {
@@ -117,6 +132,8 @@ body {
     cursor: pointer;
     touch-action: none;
     -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
     transition: transform 0.08s ease, box-shadow 0.08s ease;
 }
 
@@ -139,15 +156,17 @@ body {
 
 @media (max-width: 480px) {
     #touch-controls button {
-        min-width: 68px;
-        min-height: 68px;
-        width: 68px;
-        height: 68px;
+        min-width: 72px;
+        min-height: 72px;
+        width: 72px;
+        height: 72px;
         font-size: 32px;
     }
 
     #touch-controls {
         padding: 16px 20px;
+        padding-bottom: max(16px, calc(16px + env(safe-area-inset-bottom)));
+        gap: 28px;
     }
 }
 

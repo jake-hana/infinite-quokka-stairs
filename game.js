@@ -71,6 +71,43 @@ function roundRectFallback(x, y, w, h, r) {
     ctx.closePath();
 }
 
+function drawCheekBlush(cctx, cx, cy, headR) {
+    const cheekR = headR * 0.28;
+    const cheekY = cy + headR * 0.08;
+    const cheekX = headR * 0.42;
+    [1, -1].forEach(s => {
+        const g = cctx.createRadialGradient(
+            cx + s * cheekX - cheekR * 0.3, cheekY, 0,
+            cx + s * cheekX, cheekY, cheekR
+        );
+        g.addColorStop(0, 'rgba(255, 180, 170, 0.42)');
+        g.addColorStop(0.5, 'rgba(255, 150, 140, 0.28)');
+        g.addColorStop(1, 'transparent');
+        cctx.fillStyle = g;
+        cctx.beginPath();
+        cctx.ellipse(cx + s * cheekX, cheekY, cheekR, cheekR * 0.9, 0, 0, Math.PI * 2);
+        cctx.fill();
+    });
+}
+
+function drawEyeSparkle(cctx, cx, cy, headR) {
+    const eyeX = headR * 0.35;
+    const eyeY = cy - headR * 0.1;
+    const bigR = headR * 0.06;
+    const smallR = headR * 0.03;
+    [1, -1].forEach(s => {
+        const ex = cx + s * eyeX;
+        cctx.fillStyle = 'rgba(255,255,255,0.95)';
+        cctx.beginPath();
+        cctx.arc(ex - s * headR * 0.08, eyeY - headR * 0.02, bigR, 0, Math.PI * 2);
+        cctx.fill();
+        cctx.fillStyle = 'rgba(255,255,255,0.85)';
+        cctx.beginPath();
+        cctx.arc(ex + s * headR * 0.12, eyeY + headR * 0.04, smallR, 0, Math.PI * 2);
+        cctx.fill();
+    });
+}
+
 function drawFallbackHead(cctx, cx, cy, headR) {
     cctx.fillStyle = '#E5D0B5';
     cctx.beginPath();
@@ -84,15 +121,20 @@ function drawFallbackHead(cctx, cx, cy, headR) {
     cctx.arc(cx - headR * 0.35, cy - headR * 0.1, headR * 0.15, 0, Math.PI * 2);
     cctx.arc(cx + headR * 0.35, cy - headR * 0.1, headR * 0.15, 0, Math.PI * 2);
     cctx.fill();
+    drawEyeSparkle(cctx, cx, cy, headR);
     cctx.fillStyle = '#5D4E37';
     cctx.beginPath();
     cctx.ellipse(cx, cy + headR * 0.2, headR * 0.12, headR * 0.15, 0, 0, Math.PI * 2);
     cctx.fill();
     cctx.strokeStyle = '#6B5B45';
     cctx.lineWidth = headR * 0.08;
+    cctx.lineCap = 'round';
     cctx.beginPath();
-    cctx.arc(cx, cy + headR * 0.35, headR * 0.25, 0.2 * Math.PI, 0.8 * Math.PI);
+    const mouthY = cy + headR * 0.35;
+    cctx.moveTo(cx - headR * 0.2, mouthY + headR * 0.05);
+    cctx.quadraticCurveTo(cx, mouthY + headR * 0.2, cx + headR * 0.2, mouthY + headR * 0.05);
     cctx.stroke();
+    drawCheekBlush(cctx, cx, cy, headR);
 }
 
 function drawBodyParts(cctx, cw, ch) {
@@ -193,6 +235,8 @@ function buildCharCache(headImg) {
     if (headImg && headImg.complete && headImg.naturalWidth > 0) {
         const headSize = headR * 2.2;
         cctx.drawImage(headImg, cx - headSize / 2, headY - headSize / 2, headSize, headSize);
+        drawCheekBlush(cctx, cx, headY, headR);
+        drawEyeSparkle(cctx, cx, headY, headR);
     } else {
         drawFallbackHead(cctx, cx, headY, headR);
     }
