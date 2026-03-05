@@ -440,11 +440,13 @@ function init() {
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', function() { setTimeout(onResize, 150); });
     window.addEventListener('pageshow', function(e) {
-        if (e.persisted) {
-            onResize();
-            rafId = requestAnimationFrame(gameLoop);
-        }
+        resizeCanvas();
+        if (dpr !== lastCacheDpr) buildAllCaches(charHeadImg);
+        if (e.persisted) rafId = requestAnimationFrame(gameLoop);
     });
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', onResize);
+    }
 
     createHills();
     resizeCanvas();
@@ -453,7 +455,8 @@ function init() {
     resetGame();
 
     requestAnimationFrame(function() {
-        if (canvasWrapper && (canvasWidth <= 0 || canvasHeight <= 0) && (canvasWrapper.clientWidth > 0 || canvasWrapper.clientHeight > 0)) {
+        const rect = canvas ? canvas.getBoundingClientRect() : { width: 0, height: 0 };
+        if (canvas && (canvasWidth <= 0 || canvasHeight <= 0) && (rect.width > 0 || rect.height > 0)) {
             resizeCanvas();
             buildAllCaches(charHeadImg);
         }
@@ -470,15 +473,14 @@ function onResize() {
 }
 
 function resizeCanvas() {
-    if (!canvasWrapper || !canvas || !ctx) return;
-    dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const cssW = canvasWrapper.clientWidth || 1;
-    const cssH = Math.max(1, canvasWrapper.clientHeight || 1);
+    if (!canvas || !ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const cssW = Math.max(1, rect.width);
+    const cssH = Math.max(1, rect.height);
+    dpr = window.devicePixelRatio || 1;
 
-    canvas.style.width = cssW + 'px';
-    canvas.style.height = cssH + 'px';
-    canvas.width = Math.ceil(cssW * dpr);
-    canvas.height = Math.ceil(cssH * dpr);
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
 
     canvasWidth = cssW;
     canvasHeight = cssH;
@@ -900,7 +902,6 @@ function drawDeathPopup() {
 function drawPlayer() {
     animationFrame++;
     ctx.save();
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     applyCameraTransform();
 
     const x = player.worldX;
