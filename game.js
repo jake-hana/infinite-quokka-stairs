@@ -23,7 +23,7 @@ const CONFIG = {
     CHAR_WIDTH: 38,
     CHAR_HEIGHT: 46,
     CACHE_HEIGHT: 192,
-    CACHE_PADDING: 50,
+    CACHE_PADDING: 60,
     CHAR_VISUAL_SCALE: 1.5,
     BOUNCE_PX: 4,
     SQUASH_JUMP: 0.94,
@@ -145,11 +145,13 @@ function drawDeathOverlay(cctx, cx, cy, headR) {
 function buildHeadCache(headImg) {
     const cacheH = CONFIG.CACHE_HEIGHT;
     const cacheW = cacheH * (CONFIG.CHAR_WIDTH / CONFIG.CHAR_HEIGHT);
+    const pad = CONFIG.CACHE_PADDING || 60;
     const cacheCanvas = document.createElement('canvas');
-    cacheCanvas.width = Math.ceil(cacheW * dpr);
-    cacheCanvas.height = Math.ceil(cacheH * dpr);
+    cacheCanvas.width = cacheW + pad * 2;
+    cacheCanvas.height = cacheH + pad * 2;
     const cctx = cacheCanvas.getContext('2d');
-    cctx.scale(dpr, dpr);
+    cctx.setTransform(1, 0, 0, 1, 0, 0);
+    cctx.translate(pad, pad);
 
     const cw = cacheW;
     const ch = cacheH;
@@ -324,16 +326,16 @@ function drawBodyForDir(cctx, cw, ch, dir, pad) {
 function buildBodyCaches() {
     const baseH = CONFIG.CACHE_HEIGHT;
     const baseW = baseH * (CONFIG.CHAR_WIDTH / CONFIG.CHAR_HEIGHT);
-    const pad = CONFIG.CACHE_PADDING || 50;
+    const pad = CONFIG.CACHE_PADDING || 60;
     const cacheW = baseW + pad * 2;
     const cacheH = baseH + pad * 2;
 
     const buildOne = (dir) => {
         const cacheCanvas = document.createElement('canvas');
-        cacheCanvas.width = Math.ceil(cacheW * dpr);
-        cacheCanvas.height = Math.ceil(cacheH * dpr);
+        cacheCanvas.width = cacheW;
+        cacheCanvas.height = cacheH;
         const cctx = cacheCanvas.getContext('2d');
-        cctx.scale(dpr, dpr);
+        cctx.setTransform(1, 0, 0, 1, 0, 0);
         drawBodyForDir(cctx, cacheW, cacheH, dir, pad);
         return cacheCanvas;
     };
@@ -898,6 +900,7 @@ function drawDeathPopup() {
 function drawPlayer() {
     animationFrame++;
     ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     applyCameraTransform();
 
     const x = player.worldX;
@@ -964,22 +967,22 @@ function drawPlayer() {
 
     if (player.isFalling) ctx.globalAlpha = 0.9;
 
+    const pad = CONFIG.CACHE_PADDING || 60;
+    const contentW = CONFIG.CACHE_HEIGHT * (CONFIG.CHAR_WIDTH / CONFIG.CHAR_HEIGHT);
+    const contentH = CONFIG.CACHE_HEIGHT;
+
+    const headOffset = (isFacingLeft ? -1 : 1) * CONFIG.HEAD_FRONT_OFFSET_PX;
+    const headSize = drawH * 0.72;
+    const headX = drawLeft + (drawW - headSize) / 2 + headOffset;
+    const headY = drawYAnchor + drawH * 0.08;
+
     const bodyCache = isFacingLeft ? bodyCacheLeft : bodyCacheRight;
     if (bodyCache && bodyCache.width > 0) {
-        const cacheW = bodyCache.width / dpr;
-        const cacheH = bodyCache.height / dpr;
-        const pad = CONFIG.CACHE_PADDING || 50;
-        const contentW = cacheW - pad * 2;
-        const contentH = cacheH - pad * 2;
         ctx.drawImage(bodyCache, pad, pad, contentW, contentH, drawLeft, drawYAnchor, drawW, drawH);
     }
 
     if (headCache && headCache.width > 0) {
-        const headOffset = (isFacingLeft ? -1 : 1) * CONFIG.HEAD_FRONT_OFFSET_PX;
-        const headSize = drawH * 0.72;
-        const headX = drawLeft + (drawW - headSize) / 2 + headOffset;
-        const headY = drawYAnchor + drawH * 0.08;
-        ctx.drawImage(headCache, 0, 0, headCache.width / dpr, headCache.height / dpr, headX, headY, headSize, headSize * (headCache.height / headCache.width));
+        ctx.drawImage(headCache, pad, pad, contentW, contentH, headX, headY, headSize, headSize * (contentH / contentW));
 
         if (player.isFalling && (now - player.fallStartTime) < CONFIG.DEATH_FACE_MS + 50) {
             const headCx = headX + headSize / 2;
@@ -992,20 +995,30 @@ function drawPlayer() {
     ctx.globalAlpha = 1;
 
     if (debugMode && player) {
-        const charCx = x + w / 2;
-        const charCy = drawYAnchor + drawH / 2;
+        const headSizeH = headSize * (contentH / contentW);
+        const bboxLeft = Math.min(drawLeft, headX);
+        const bboxRight = Math.max(drawLeft + drawW, headX + headSize);
+        const bboxTop = headY;
+        const bboxBottom = drawYAnchor + drawH;
+        const feetX = x + w / 2;
+        const feetY = drawYAnchor + drawH;
+
+        ctx.strokeStyle = '#00FF00';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bboxLeft, bboxTop, bboxRight - bboxLeft, bboxBottom - bboxTop);
+
         ctx.strokeStyle = '#FF0000';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(charCx - 12, charCy);
-        ctx.lineTo(charCx + 12, charCy);
-        ctx.moveTo(charCx, charCy - 12);
-        ctx.lineTo(charCx, charCy + 12);
+        ctx.moveTo(feetX - 12, feetY);
+        ctx.lineTo(feetX + 12, feetY);
+        ctx.moveTo(feetX, feetY - 12);
+        ctx.lineTo(feetX, feetY + 12);
         ctx.stroke();
         ctx.font = '10px "Segoe UI", sans-serif';
         ctx.fillStyle = '#000';
         ctx.textAlign = 'center';
-        ctx.fillText(`dir=${playerDir === 'left' ? 'LEFT' : 'RIGHT'}, frontSign=${playerDir === 'right' ? '+1' : '-1'}`, charCx, charCy - 18);
+        ctx.fillText(`dir=${playerDir === 'left' ? 'LEFT' : 'RIGHT'}`, feetX, feetY - 18);
     }
 
     ctx.restore();
@@ -1052,9 +1065,11 @@ function updateCanvasDebugInfo() {
         el.style.cssText = 'position:fixed;top:4px;left:4px;font-size:9px;font-family:monospace;color:#333;background:rgba(255,255,255,0.85);padding:4px 6px;border-radius:4px;pointer-events:none;z-index:9999;';
         document.body.appendChild(el);
     }
-    el.textContent = 'w=' + (canvas ? canvas.width : 0) + ' h=' + (canvas ? canvas.height : 0) +
-        ' cssW=' + canvasWidth + ' cssH=' + canvasHeight +
-        ' dpr=' + dpr + ' t=' + Math.round(lastRenderTime || 0);
+    const cacheW = CONFIG.CACHE_HEIGHT * (CONFIG.CHAR_WIDTH / CONFIG.CHAR_HEIGHT) + (CONFIG.CACHE_PADDING || 60) * 2;
+    const cacheH = CONFIG.CACHE_HEIGHT + (CONFIG.CACHE_PADDING || 60) * 2;
+    el.textContent = 'cssW=' + canvasWidth + ' cssH=' + canvasHeight +
+        ' dpr=' + dpr + ' | cache ' + cacheW + 'x' + cacheH +
+        ' pad=' + (CONFIG.CACHE_PADDING || 60);
 }
 
 function gameLoop() {
