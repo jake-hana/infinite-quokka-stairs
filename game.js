@@ -1,6 +1,6 @@
 /* ============================================
    무한의 계단 - 쿼카의 모험
-   QuickQuokka + 모바일 터치/스와이프
+   캐릭터: 머리(QuickQuokka) 정면 고정 + 몸통만 dir별 측면(LEFT/RIGHT)
    ============================================ */
 
 const CONFIG = {
@@ -16,19 +16,24 @@ const CONFIG = {
     REMOVE_SCREENS: 2.5,
     CAMERA_LERP: 0.15,
     PLAYER_SCREEN_Y_RATIO: 0.6,
-    INPUT_LOCK_MS: 90,
-    MOVE_DURATION_MS: 85,
+    INPUT_LOCK_MS: 50,
+    MOVE_DURATION_MS: 145,
+    TURN_POSE_MS: 100,
+    ARC_HEIGHT: 22,
     CHAR_WIDTH: 38,
     CHAR_HEIGHT: 46,
     CACHE_HEIGHT: 192,
+    CACHE_PADDING: 50,
     CHAR_VISUAL_SCALE: 1.5,
-    BOUNCE_PX: 3,
-    SQUASH_MIN: 0.96,
-    SQUASH_MAX: 1.04,
+    BOUNCE_PX: 4,
+    SQUASH_JUMP: 0.94,
+    STRETCH_JUMP: 1.06,
+    LAND_SQUASH: 0.96,
     BODY_SWAY_PX: 2.5,
-    QUOKKA_HEAD_SVG: 'https://upload.wikimedia.org/wikipedia/commons/d/d9/QuickQuokka.svg',
-    SWIPE_MIN_DIST: 50,
-    SWIPE_MAX_VERTICAL_RATIO: 0.6
+    DEATH_FACE_MS: 150,
+    SCREEN_SHAKE_AMT: 3,
+    HEAD_FRONT_OFFSET_PX: 4,
+    QUOKKA_HEAD_SVG: 'https://upload.wikimedia.org/wikipedia/commons/d/d9/QuickQuokka.svg'
 };
 
 let canvas, ctx, canvasWrapper;
@@ -45,17 +50,24 @@ let cameraY = 0;
 let gameSpeed = 1;
 let animationFrame = 0;
 let scoreDisplay, finalScoreDisplay, startScreen, gameoverScreen;
-let startBtn, restartBtn, btnLeft, btnRight;
+let startBtn, restartBtn, btnClimb, btnTurn;
+let debugPanel = null;
 let dpr = 1;
-let charCache = null;
+let headCache = null;
+let bodyCacheLeft = null;
+let bodyCacheRight = null;
 let charHeadImg = null;
 let inputLockUntil = 0;
 let moveStartTime = 0;
 let moveStartX = 0;
 let moveStartY = 0;
 let lastCacheDpr = 0;
-let swipeStartX = 0;
-let swipeStartY = 0;
+let playerDir = 'right';
+let moveType = 'step';
+let deathPopupTime = 0;
+let shakeSeed = 0;
+
+const debugMode = typeof location !== 'undefined' && new URLSearchParams(location.search).get('debug') === '1';
 
 function roundRectFallback(x, y, w, h, r) {
     ctx.beginPath();
@@ -71,150 +83,64 @@ function roundRectFallback(x, y, w, h, r) {
     ctx.closePath();
 }
 
-function drawCheekBlush(cctx, cx, cy, headR) {
-    const cheekR = headR * 0.28;
-    const cheekY = cy + headR * 0.08;
-    const cheekX = headR * 0.42;
+function drawCheekBlushOnHead(cctx, cx, cy, headR) {
+    const cheekR = headR * 0.22;
+    const cheekY = cy + headR * 0.06;
     [1, -1].forEach(s => {
         const g = cctx.createRadialGradient(
-            cx + s * cheekX - cheekR * 0.3, cheekY, 0,
-            cx + s * cheekX, cheekY, cheekR
+            cx + s * headR * 0.38 - cheekR * 0.3, cheekY, 0,
+            cx + s * headR * 0.38, cheekY, cheekR
         );
-        g.addColorStop(0, 'rgba(255, 180, 170, 0.42)');
-        g.addColorStop(0.5, 'rgba(255, 150, 140, 0.28)');
+        g.addColorStop(0, 'rgba(255, 180, 170, 0.35)');
+        g.addColorStop(0.6, 'rgba(255, 150, 140, 0.2)');
         g.addColorStop(1, 'transparent');
         cctx.fillStyle = g;
         cctx.beginPath();
-        cctx.ellipse(cx + s * cheekX, cheekY, cheekR, cheekR * 0.9, 0, 0, Math.PI * 2);
+        cctx.ellipse(cx + s * headR * 0.38, cheekY, cheekR, cheekR * 0.85, 0, 0, Math.PI * 2);
         cctx.fill();
     });
 }
 
-function drawEyeSparkle(cctx, cx, cy, headR) {
-    const eyeX = headR * 0.35;
-    const eyeY = cy - headR * 0.1;
-    const bigR = headR * 0.06;
-    const smallR = headR * 0.03;
+function drawEyeSparkleOnHead(cctx, cx, cy, headR) {
+    const eyeX = headR * 0.3;
+    const eyeY = cy - headR * 0.08;
+    const bigR = headR * 0.05;
+    const smallR = headR * 0.025;
     [1, -1].forEach(s => {
         const ex = cx + s * eyeX;
-        cctx.fillStyle = 'rgba(255,255,255,0.95)';
+        cctx.fillStyle = 'rgba(255,255,255,0.9)';
         cctx.beginPath();
-        cctx.arc(ex - s * headR * 0.08, eyeY - headR * 0.02, bigR, 0, Math.PI * 2);
+        cctx.arc(ex - s * headR * 0.06, eyeY - headR * 0.02, bigR, 0, Math.PI * 2);
         cctx.fill();
-        cctx.fillStyle = 'rgba(255,255,255,0.85)';
+        cctx.fillStyle = 'rgba(255,255,255,0.75)';
         cctx.beginPath();
-        cctx.arc(ex + s * headR * 0.12, eyeY + headR * 0.04, smallR, 0, Math.PI * 2);
+        cctx.arc(ex + s * headR * 0.08, eyeY + headR * 0.03, smallR, 0, Math.PI * 2);
         cctx.fill();
     });
 }
 
-function drawFallbackHead(cctx, cx, cy, headR) {
-    cctx.fillStyle = '#E5D0B5';
-    cctx.beginPath();
-    cctx.arc(cx, cy, headR, 0, Math.PI * 2);
-    cctx.fill();
-    cctx.strokeStyle = '#B8956A';
-    cctx.lineWidth = 2;
-    cctx.stroke();
-    cctx.fillStyle = '#4A3828';
-    cctx.beginPath();
-    cctx.arc(cx - headR * 0.35, cy - headR * 0.1, headR * 0.15, 0, Math.PI * 2);
-    cctx.arc(cx + headR * 0.35, cy - headR * 0.1, headR * 0.15, 0, Math.PI * 2);
-    cctx.fill();
-    drawEyeSparkle(cctx, cx, cy, headR);
-    cctx.fillStyle = '#5D4E37';
-    cctx.beginPath();
-    cctx.ellipse(cx, cy + headR * 0.2, headR * 0.12, headR * 0.15, 0, 0, Math.PI * 2);
-    cctx.fill();
-    cctx.strokeStyle = '#6B5B45';
-    cctx.lineWidth = headR * 0.08;
+function drawDeathOverlay(cctx, cx, cy, headR) {
+    const eyeX = headR * 0.3;
+    const eyeY = cy - headR * 0.08;
+    cctx.strokeStyle = '#4A3828';
+    cctx.lineWidth = headR * 0.05;
     cctx.lineCap = 'round';
-    cctx.beginPath();
-    const mouthY = cy + headR * 0.35;
-    cctx.moveTo(cx - headR * 0.2, mouthY + headR * 0.05);
-    cctx.quadraticCurveTo(cx, mouthY + headR * 0.2, cx + headR * 0.2, mouthY + headR * 0.05);
-    cctx.stroke();
-    drawCheekBlush(cctx, cx, cy, headR);
-}
-
-function drawBodyParts(cctx, cw, ch) {
-    const cx = cw / 2;
-    const bodyTop = ch * 0.38;
-    const bodyBottom = ch * 0.95;
-
-    cctx.save();
-
-    const bodyH = (bodyBottom - bodyTop) * 0.9;
-    const bodyW = cw * 0.6;
-    const bodyCx = cx;
-    const bodyCy = bodyTop + bodyH / 2 + ch * 0.02;
-
-    const bodyGrad = cctx.createLinearGradient(bodyCx - bodyW / 2, bodyTop, bodyCx + bodyW / 2, bodyBottom);
-    bodyGrad.addColorStop(0, '#D4B896');
-    bodyGrad.addColorStop(0.4, '#C9A87C');
-    bodyGrad.addColorStop(0.7, '#B8956A');
-    bodyGrad.addColorStop(1, '#A67C52');
-    cctx.fillStyle = bodyGrad;
-    cctx.beginPath();
-    cctx.ellipse(bodyCx, bodyCy, bodyW / 2, bodyH / 2, 0, 0, Math.PI * 2);
-    cctx.fill();
-    cctx.fillStyle = 'rgba(0,0,0,0.06)';
-    cctx.beginPath();
-    cctx.ellipse(bodyCx + bodyW * 0.15, bodyCy + bodyH * 0.1, bodyW * 0.35, bodyH * 0.4, 0, 0, Math.PI * 2);
-    cctx.fill();
-    cctx.fillStyle = 'rgba(255,255,255,0.25)';
-    cctx.beginPath();
-    cctx.ellipse(bodyCx - bodyW * 0.2, bodyCy - bodyH * 0.15, bodyW * 0.25, bodyH * 0.35, 0, 0, Math.PI * 2);
-    cctx.fill();
-
-    const armW = bodyW * 0.2;
-    const armH = bodyH * 0.35;
-    const armY = bodyCy - bodyH * 0.1;
-    const armDist = bodyW * 0.22;
-    cctx.fillStyle = '#B8956A';
-    cctx.strokeStyle = 'rgba(0,0,0,0.12)';
-    cctx.lineWidth = 1.5;
     [1, -1].forEach(s => {
-        const ax = bodyCx + s * armDist;
+        const ex = cx + s * eyeX;
         cctx.beginPath();
-        cctx.ellipse(ax, armY, armW, armH, s * 0.25, 0, Math.PI * 2);
-        cctx.fill();
+        cctx.moveTo(ex - headR * 0.1, eyeY - headR * 0.06);
+        cctx.lineTo(ex + headR * 0.1, eyeY + headR * 0.06);
+        cctx.moveTo(ex + headR * 0.1, eyeY - headR * 0.06);
+        cctx.lineTo(ex - headR * 0.1, eyeY + headR * 0.06);
         cctx.stroke();
     });
-    cctx.fillStyle = 'rgba(0,0,0,0.04)';
-    cctx.strokeStyle = 'transparent';
-    [1, -1].forEach(s => {
-        const ax = bodyCx + s * armDist;
-        cctx.beginPath();
-        cctx.ellipse(ax + s * 3, armY + 2, armW * 0.5, armH * 0.4, s * 0.2, 0, Math.PI * 2);
-        cctx.fill();
-    });
-
-    const legY = bodyBottom - ch * 0.08;
-    const legH = ch * 0.12;
-    const footH = ch * 0.05;
-    cctx.fillStyle = '#B8956A';
+    cctx.fillStyle = '#5D4E37';
     cctx.beginPath();
-    cctx.ellipse(cx - bodyW * 0.2, legY + legH / 2, bodyW * 0.12, legH / 2, 0, 0, Math.PI * 2);
-    cctx.ellipse(cx + bodyW * 0.2, legY + legH / 2, bodyW * 0.12, legH / 2, 0, 0, Math.PI * 2);
+    cctx.ellipse(cx, cy + headR * 0.38, headR * 0.12, headR * 0.14, 0, 0, Math.PI * 2);
     cctx.fill();
-    cctx.fillStyle = '#9A7B4A';
-    cctx.beginPath();
-    cctx.ellipse(cx - bodyW * 0.2, legY + legH, bodyW * 0.14, footH, 0, 0, Math.PI * 2);
-    cctx.ellipse(cx + bodyW * 0.2, legY + legH, bodyW * 0.14, footH, 0, 0, Math.PI * 2);
-    cctx.fill();
-
-    cctx.fillStyle = '#A67C52';
-    cctx.beginPath();
-    cctx.moveTo(bodyCx + bodyW * 0.35, bodyCy + bodyH * 0.2);
-    cctx.quadraticCurveTo(bodyCx + bodyW * 0.6, bodyCy, bodyCx + bodyW * 0.4, bodyCy + bodyH * 0.5);
-    cctx.quadraticCurveTo(bodyCx + bodyW * 0.35, bodyCy + bodyH * 0.35, bodyCx + bodyW * 0.35, bodyCy + bodyH * 0.2);
-    cctx.fill();
-
-    cctx.restore();
 }
 
-function buildCharCache(headImg) {
+function buildHeadCache(headImg) {
     const cacheH = CONFIG.CACHE_HEIGHT;
     const cacheW = cacheH * (CONFIG.CHAR_WIDTH / CONFIG.CHAR_HEIGHT);
     const cacheCanvas = document.createElement('canvas');
@@ -226,22 +152,197 @@ function buildCharCache(headImg) {
     const cw = cacheW;
     const ch = cacheH;
     const cx = cw / 2;
-
-    drawBodyParts(cctx, cw, ch);
-
     const headR = Math.min(cw, ch) * 0.32;
     const headY = ch * 0.32;
 
     if (headImg && headImg.complete && headImg.naturalWidth > 0) {
         const headSize = headR * 2.2;
         cctx.drawImage(headImg, cx - headSize / 2, headY - headSize / 2, headSize, headSize);
-        drawCheekBlush(cctx, cx, headY, headR);
-        drawEyeSparkle(cctx, cx, headY, headR);
+        drawCheekBlushOnHead(cctx, cx, headY, headR);
+        drawEyeSparkleOnHead(cctx, cx, headY, headR);
     } else {
-        drawFallbackHead(cctx, cx, headY, headR);
+        cctx.fillStyle = '#E5D0B5';
+        cctx.beginPath();
+        cctx.arc(cx, headY, headR, 0, Math.PI * 2);
+        cctx.fill();
+        cctx.strokeStyle = '#B8956A';
+        cctx.lineWidth = 2;
+        cctx.stroke();
+        cctx.fillStyle = '#4A3828';
+        cctx.beginPath();
+        cctx.arc(cx - headR * 0.32, headY - headR * 0.08, headR * 0.12, 0, Math.PI * 2);
+        cctx.arc(cx + headR * 0.32, headY - headR * 0.08, headR * 0.12, 0, Math.PI * 2);
+        cctx.fill();
+        drawEyeSparkleOnHead(cctx, cx, headY, headR);
+        cctx.fillStyle = '#5D4E37';
+        cctx.beginPath();
+        cctx.ellipse(cx, headY + headR * 0.18, headR * 0.1, headR * 0.12, 0, 0, Math.PI * 2);
+        cctx.fill();
+        drawCheekBlushOnHead(cctx, cx, headY, headR);
     }
 
-    charCache = cacheCanvas;
+    headCache = cacheCanvas;
+}
+
+function drawBodyForDir(cctx, cw, ch, dir, pad) {
+    const padX = pad || 0;
+    const padY = pad || 0;
+    const contentW = cw - padX * 2;
+    const contentH = ch - padY * 2;
+    cctx.translate(padX, padY);
+    const cx = contentW / 2;
+    const frontSign = (dir === 'right') ? 1 : -1;
+    const bodyTop = contentH * 0.35;
+    const bodyBottom = contentH * 0.96;
+    const bodyH = (bodyBottom - bodyTop) * 0.92;
+    const bodyCx = cx;
+    const bodyCy = bodyTop + bodyH * 0.45;
+    const frontExt = contentW * 0.22;
+    const backExt = contentW * 0.24;
+    const bellyW = contentW * 0.30;
+    const highlightX = bodyCx + frontSign * contentW * 0.18;
+    const shadowX = bodyCx - frontSign * contentW * 0.18;
+
+    cctx.save();
+
+    function pearBodyPath() {
+        const topY = bodyTop + bodyH * 0.08;
+        const botY = bodyBottom - bodyH * 0.08;
+        const midY = bodyCy;
+        cctx.beginPath();
+        cctx.moveTo(bodyCx + frontSign * frontExt, topY + bodyH * 0.1);
+        cctx.quadraticCurveTo(bodyCx + frontSign * frontExt, midY, bodyCx + frontSign * frontExt * 0.85, botY - bodyH * 0.05);
+        cctx.quadraticCurveTo(bodyCx, botY + bodyH * 0.1, bodyCx - frontSign * bellyW, botY - bodyH * 0.08);
+        cctx.quadraticCurveTo(bodyCx - frontSign * (backExt + bellyW * 0.35), midY + bodyH * 0.1, bodyCx - frontSign * backExt, topY);
+        cctx.quadraticCurveTo(bodyCx - frontSign * backExt * 0.6, topY - bodyH * 0.05, bodyCx + frontSign * frontExt, topY + bodyH * 0.1);
+        cctx.closePath();
+    }
+
+    let tailStartX = bodyCx - frontSign * backExt * 0.85;
+    const tailStartY = bodyBottom - bodyH * 0.32;
+    let tailMid1X = bodyCx - frontSign * (backExt + contentW * 0.08);
+    const tailMid1Y = bodyBottom + contentH * 0.01;
+    let tailMid2X = bodyCx - frontSign * (backExt + contentW * 0.20);
+    const tailMid2Y = bodyBottom - contentH * 0.05;
+    let tailEndX = bodyCx - frontSign * (backExt + contentW * 0.30);
+    let tailEndY = bodyBottom - contentH * 0.06;
+    tailEndX = Math.max(12, Math.min(contentW - 12, tailEndX));
+    tailEndY = Math.max(12, Math.min(contentH - 12, tailEndY));
+    tailMid1X = (tailStartX + tailEndX) / 2 - frontSign * 5;
+    tailMid2X = (tailStartX + tailEndX) / 2 - frontSign * 15;
+
+    function tailPath() {
+        cctx.beginPath();
+        cctx.moveTo(tailStartX, tailStartY);
+        cctx.quadraticCurveTo(tailMid1X, tailMid1Y, tailMid2X, tailMid2Y);
+        cctx.quadraticCurveTo(tailEndX + frontSign * 8, tailEndY, tailEndX, tailEndY);
+    }
+    cctx.strokeStyle = 'rgba(60,45,30,0.8)';
+    cctx.lineWidth = 22;
+    cctx.lineCap = 'round';
+    cctx.lineJoin = 'round';
+    tailPath();
+    cctx.stroke();
+    cctx.strokeStyle = '#8B6B3A';
+    cctx.lineWidth = 20;
+    tailPath();
+    cctx.stroke();
+    cctx.fillStyle = '#8B6B3A';
+    cctx.beginPath();
+    cctx.ellipse(tailEndX, tailEndY, 10, 10, 0, 0, Math.PI * 2);
+    cctx.fill();
+    cctx.strokeStyle = 'rgba(60,45,30,0.6)';
+    cctx.lineWidth = 1;
+    cctx.stroke();
+
+    const drawHindLeg = (thighRx, thighRy, footW, footH, legX, legY, color, alpha) => {
+        cctx.globalAlpha = alpha;
+        cctx.fillStyle = color;
+        cctx.beginPath();
+        cctx.ellipse(legX, legY - thighRy * 0.5, thighRx, thighRy, 0, 0, Math.PI * 2);
+        cctx.fill();
+        cctx.fillStyle = color;
+        cctx.beginPath();
+        cctx.ellipse(legX, legY + contentH * 0.03, footW, footH, 0, 0, Math.PI * 2);
+        cctx.fill();
+        cctx.globalAlpha = 1;
+    };
+
+    const hindLegX = bodyCx - frontSign * contentW * 0.18;
+    const hindLegY = bodyBottom - contentH * 0.02;
+
+    drawHindLeg(13, 9, 15, 7, hindLegX, hindLegY, '#9A7B4A', 0.75);
+
+    const bodyGrad = cctx.createLinearGradient(bodyCx - contentW / 2, bodyTop, bodyCx + contentW / 2, bodyBottom);
+    bodyGrad.addColorStop(0, '#D4B896');
+    bodyGrad.addColorStop(0.35, '#C9A87C');
+    bodyGrad.addColorStop(0.65, '#B8956A');
+    bodyGrad.addColorStop(1, '#A67C52');
+    cctx.fillStyle = bodyGrad;
+    pearBodyPath();
+    cctx.fill();
+
+    cctx.fillStyle = 'rgba(0,0,0,0.06)';
+    cctx.beginPath();
+    cctx.ellipse(shadowX, bodyCy + bodyH * 0.1, contentW * 0.15, bodyH * 0.3, 0, 0, Math.PI * 2);
+    cctx.fill();
+    cctx.fillStyle = 'rgba(255,255,255,0.16)';
+    cctx.beginPath();
+    cctx.ellipse(highlightX, bodyCy - bodyH * 0.08, contentW * 0.13, bodyH * 0.26, 0, 0, Math.PI * 2);
+    cctx.fill();
+
+    drawHindLeg(14, 10, 16, 8, bodyCx + frontSign * contentW * 0.08, bodyBottom - contentH * 0.01, '#8B6B3A', 0.9);
+
+    const frontPawBaseX = bodyCx + frontSign * (frontExt + 6);
+    const pawRx = 8;
+    const pawRy = 6;
+    [[-1, -2], [1, 3]].forEach(([s, yOff]) => {
+        const px = frontPawBaseX + frontSign * s * 10;
+        const py = bodyCy - bodyH * 0.15 + yOff;
+        cctx.fillStyle = 'rgba(0,0,0,0.2)';
+        cctx.beginPath();
+        cctx.ellipse(px, py + 3, pawRx, pawRy, 0, 0, Math.PI * 2);
+        cctx.fill();
+        cctx.fillStyle = '#8B6B3A';
+        cctx.beginPath();
+        cctx.ellipse(px, py, pawRx, pawRy, 0, 0, Math.PI * 2);
+        cctx.fill();
+        cctx.strokeStyle = '#5D4A35';
+        cctx.lineWidth = 2;
+        cctx.stroke();
+        cctx.fillStyle = 'rgba(255,255,255,0.25)';
+        cctx.beginPath();
+        cctx.ellipse(px - frontSign * 3, py - 2, 3, 2.5, 0, 0, Math.PI * 2);
+        cctx.fill();
+    });
+
+    cctx.restore();
+}
+
+function buildBodyCaches() {
+    const baseH = CONFIG.CACHE_HEIGHT;
+    const baseW = baseH * (CONFIG.CHAR_WIDTH / CONFIG.CHAR_HEIGHT);
+    const pad = CONFIG.CACHE_PADDING || 50;
+    const cacheW = baseW + pad * 2;
+    const cacheH = baseH + pad * 2;
+
+    const buildOne = (dir) => {
+        const cacheCanvas = document.createElement('canvas');
+        cacheCanvas.width = Math.ceil(cacheW * dpr);
+        cacheCanvas.height = Math.ceil(cacheH * dpr);
+        const cctx = cacheCanvas.getContext('2d');
+        cctx.scale(dpr, dpr);
+        drawBodyForDir(cctx, cacheW, cacheH, dir, pad);
+        return cacheCanvas;
+    };
+
+    bodyCacheLeft = buildOne('left');
+    bodyCacheRight = buildOne('right');
+}
+
+function buildAllCaches(headImg) {
+    buildHeadCache(headImg);
+    buildBodyCaches();
     lastCacheDpr = dpr;
 }
 
@@ -250,24 +351,45 @@ function loadQuokkaHead() {
     img.crossOrigin = 'anonymous';
     img.onload = () => {
         charHeadImg = img;
-        buildCharCache(img);
+        buildAllCaches(img);
     };
     img.onerror = () => {
         charHeadImg = null;
-        buildCharCache(null);
+        buildAllCaches(null);
     };
     img.src = CONFIG.QUOKKA_HEAD_SVG;
 }
 
-function processDirectionInput(direction) {
+function handleClimb() {
+    if (gameState === 'start' || gameState === 'gameover') {
+        startGame();
+        return;
+    }
     if (gameState !== 'playing') return;
-    if (player.isFalling || player.isMoving) return;
+    if (!player || player.isFalling || player.isMoving) return;
 
     const now = performance.now();
     if (now < inputLockUntil) return;
 
     inputLockUntil = now + CONFIG.INPUT_LOCK_MS;
-    tryMove(direction);
+    moveType = 'step';
+    tryMove(playerDir);
+}
+
+function handleTurn() {
+    if (gameState === 'start' || gameState === 'gameover') {
+        startGame();
+        return;
+    }
+    if (!player || player.isFalling || player.isMoving) return;
+
+    const now = performance.now();
+    if (now < inputLockUntil) return;
+
+    inputLockUntil = now + CONFIG.INPUT_LOCK_MS;
+    playerDir = playerDir === 'left' ? 'right' : 'left';
+    moveType = 'turn';
+    tryMove(playerDir);
 }
 
 function init() {
@@ -280,63 +402,50 @@ function init() {
     gameoverScreen = document.getElementById('gameover-screen');
     startBtn = document.getElementById('start-btn');
     restartBtn = document.getElementById('restart-btn');
-    btnLeft = document.getElementById('btn-left');
-    btnRight = document.getElementById('btn-right');
+    btnClimb = document.getElementById('btn-climb');
+    btnTurn = document.getElementById('btn-turn');
+    debugPanel = document.getElementById('debug-panel');
+
+    if (debugPanel) {
+        debugPanel.classList.toggle('hidden', !debugMode);
+    }
 
     startBtn.addEventListener('click', startGame);
     restartBtn.addEventListener('click', startGame);
 
-    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keydown', handleKeyDown, { capture: true });
 
-    [btnLeft, btnRight].forEach((btn, i) => {
-        const dir = i === 0 ? 'left' : 'right';
-        const handler = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            processDirectionInput(dir);
-        };
-        btn.addEventListener('pointerdown', handler);
-        btn.addEventListener('touchstart', handler, { passive: false });
-    });
+    const climbHandler = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleClimb();
+    };
+    const turnHandler = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleTurn();
+    };
 
-    canvasWrapper.addEventListener('touchstart', handleSwipeStart, { passive: true });
-    canvasWrapper.addEventListener('touchend', handleSwipeEnd, { passive: true });
+    btnClimb.addEventListener('pointerdown', climbHandler);
+    btnClimb.addEventListener('touchstart', climbHandler, { passive: false });
+    btnTurn.addEventListener('pointerdown', turnHandler);
+    btnTurn.addEventListener('touchstart', turnHandler, { passive: false });
 
     window.addEventListener('resize', onResize);
 
     createHills();
     resizeCanvas();
-    buildCharCache(null);
+    buildAllCaches(null);
     loadQuokkaHead();
     resetGame();
 
     requestAnimationFrame(gameLoop);
 }
 
-function handleSwipeStart(e) {
-    if (e.touches.length === 1) {
-        swipeStartX = e.touches[0].clientX;
-        swipeStartY = e.touches[0].clientY;
-    }
-}
-
-function handleSwipeEnd(e) {
-    if (e.changedTouches.length !== 1) return;
-    const endX = e.changedTouches[0].clientX;
-    const endY = e.changedTouches[0].clientY;
-    const dx = endX - swipeStartX;
-    const dy = endY - swipeStartY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < CONFIG.SWIPE_MIN_DIST) return;
-    if (Math.abs(dy) > dist * CONFIG.SWIPE_MAX_VERTICAL_RATIO) return;
-    if (dx > 0) processDirectionInput('right');
-    else processDirectionInput('left');
-}
-
 function onResize() {
     resizeCanvas();
     if (dpr !== lastCacheDpr) {
-        buildCharCache(charHeadImg);
+        buildAllCaches(charHeadImg);
     }
 }
 
@@ -370,6 +479,8 @@ function resetGame() {
     particles = [];
     stairs = [];
     inputLockUntil = 0;
+    playerDir = 'right';
+    deathPopupTime = 0;
 
     const groundX = -CONFIG.STAIR_WIDTH / 2;
     stairs.push({
@@ -379,7 +490,7 @@ function resetGame() {
         height: CONFIG.STAIR_HEIGHT
     });
 
-    for (let i = 0; i < CONFIG.PREBUILD_COUNT; i++) generateNextStair();
+    for (let i = 0; i < CONFIG.PREBUILD_COUNT; i++) generateNextStair(i === 0);
 
     player = {
         worldX: -CONFIG.CHAR_WIDTH / 2,
@@ -390,7 +501,9 @@ function resetGame() {
         targetWorldY: null,
         isMoving: false,
         isFalling: false,
-        fallSpeed: 0
+        fallSpeed: 0,
+        fallRotation: 0,
+        fallStartTime: 0
     };
 
     cameraX = player.worldX + player.width / 2;
@@ -399,9 +512,9 @@ function resetGame() {
     scoreDisplay.textContent = '0';
 }
 
-function generateNextStair() {
+function generateNextStair(forceRight) {
     const last = stairs[stairs.length - 1];
-    const isLeft = Math.random() < 0.5;
+    const isLeft = forceRight ? false : (Math.random() < 0.5);
     const newY = last.worldY - CONFIG.STAIR_GAP;
     const newX = isLeft ? last.worldX - CONFIG.STAIR_WIDTH : last.worldX + CONFIG.STAIR_WIDTH;
     stairs.push({
@@ -414,6 +527,7 @@ function generateNextStair() {
 }
 
 function getCurrentStair() {
+    if (!player) return null;
     const feetY = player.worldY + player.height;
     const candidates = stairs.filter(s => s.worldY <= feetY + 8 && s.worldY + s.height >= feetY - 5);
     return candidates.reduce((a, b) => (!a || a.worldY < b.worldY ? b : a), null);
@@ -426,11 +540,18 @@ function getNextStair() {
     return above.reduce((a, b) => (!a || a.worldY < b.worldY ? b : a), null);
 }
 
+function getNextDir() {
+    const current = getCurrentStair();
+    const next = getNextStair();
+    if (!current || !next) return null;
+    return next.worldX < current.worldX ? 'left' : 'right';
+}
+
 function ensureStairBuffer() {
     const topWorldY = cameraY - canvasHeight * CONFIG.PLAYER_SCREEN_Y_RATIO;
     const threshold = topWorldY - CONFIG.STAIR_BUFFER_COUNT * CONFIG.STAIR_GAP;
     while (stairs.length > 0 && Math.min(...stairs.map(s => s.worldY)) > threshold) {
-        generateNextStair();
+        generateNextStair(false);
     }
 }
 
@@ -454,12 +575,16 @@ function handleKeyDown(e) {
         e.preventDefault();
         return;
     }
-    if (e.key === 'ArrowLeft') {
+    if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault();
-        processDirectionInput('left');
-    } else if (e.key === 'ArrowRight') {
+        handleClimb();
+    } else if (e.key === 'Shift' || e.key === 'Enter') {
         e.preventDefault();
-        processDirectionInput('right');
+        if (gameState === 'start' || gameState === 'gameover') {
+            startGame();
+        } else {
+            handleTurn();
+        }
     }
 }
 
@@ -472,12 +597,19 @@ function tryMove(direction) {
     const nextIsOnLeft = nextStair.worldX < currentStair.worldX;
     const correctDirection = nextIsOnLeft ? 'left' : 'right';
 
-    if (direction !== correctDirection) {
+    const isFirstMove = score === 0;
+    if (!isFirstMove && direction !== correctDirection) {
         player.isFalling = true;
         player.fallSpeed = 0;
+        player.fallRotation = 0;
+        player.fallStartTime = performance.now();
+        deathPopupTime = performance.now();
         createFallParticles();
+        createDeathParticles();
         return;
     }
+
+    if (isFirstMove) playerDir = correctDirection;
 
     const targetWorldX = nextStair.worldX + nextStair.width / 2 - player.width / 2;
     const targetWorldY = nextStair.worldY - player.height - 4;
@@ -506,8 +638,64 @@ function createFallParticles() {
     }
 }
 
+function createDeathParticles() {
+    const cx = player.worldX + player.width / 2;
+    const cy = player.worldY + player.height / 2;
+    for (let i = 0; i < 8; i++) {
+        particles.push({
+            worldX: cx + (Math.random() - 0.5) * 30,
+            worldY: cy - 20,
+            vx: (Math.random() - 0.5) * 6,
+            vy: -4 - Math.random() * 4,
+            size: 3 + Math.random() * 4,
+            color: 'rgba(255,255,220,0.9)',
+            life: 1
+        });
+    }
+    for (let i = 0; i < 6; i++) {
+        particles.push({
+            worldX: cx + (Math.random() - 0.5) * 40,
+            worldY: cy,
+            vx: (Math.random() - 0.5) * 8,
+            vy: (Math.random() - 0.5) * 6,
+            size: 4 + Math.random() * 5,
+            color: `hsl(${45 + Math.random() * 15}, 80%, 60%)`,
+            life: 1
+        });
+    }
+}
+
+function createLandingParticles() {
+    const cx = player.worldX + player.width / 2;
+    const cy = player.worldY + player.height;
+    for (let i = 0; i < 5; i++) {
+        particles.push({
+            worldX: cx + (Math.random() - 0.5) * 20,
+            worldY: cy,
+            vx: (Math.random() - 0.5) * 4,
+            vy: -2 - Math.random() * 3,
+            size: 2 + Math.random() * 3,
+            color: 'rgba(255,235,200,0.8)',
+            life: 1
+        });
+    }
+}
+
+function pseudoRandom() {
+    shakeSeed = (shakeSeed * 1103515245 + 12345) & 0x7fffffff;
+    return shakeSeed / 0x7fffffff;
+}
+
 function applyCameraTransform() {
-    ctx.translate(canvasWidth / 2 - cameraX, canvasHeight * CONFIG.PLAYER_SCREEN_Y_RATIO - cameraY);
+    let shakeX = 0, shakeY = 0;
+    if (player && player.isFalling) {
+        shakeX = (pseudoRandom() - 0.5) * CONFIG.SCREEN_SHAKE_AMT * 2;
+        shakeY = (pseudoRandom() - 0.5) * CONFIG.SCREEN_SHAKE_AMT * 2;
+    }
+    ctx.translate(
+        canvasWidth / 2 - cameraX + shakeX,
+        canvasHeight * CONFIG.PLAYER_SCREEN_Y_RATIO - cameraY + shakeY
+    );
 }
 
 function drawBackground() {
@@ -671,55 +859,133 @@ function drawStairs() {
     ctx.restore();
 }
 
+function drawDeathPopup() {
+    if (!deathPopupTime || !player) return;
+    const elapsed = (performance.now() - deathPopupTime) / 1000;
+    if (elapsed > 1) return;
+    const alpha = Math.max(0, 1 - elapsed * 1.2);
+    ctx.save();
+    ctx.translate(canvasWidth / 2 - cameraX, canvasHeight * CONFIG.PLAYER_SCREEN_Y_RATIO - cameraY);
+    const wx = player.worldX + player.width / 2;
+    const wy = player.worldY - 35;
+    ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    ctx.fillStyle = `rgba(80,40,40,${alpha})`;
+    ctx.textAlign = 'center';
+    ctx.fillText('아!', wx, wy);
+    ctx.restore();
+}
+
 function drawPlayer() {
     animationFrame++;
     ctx.save();
     applyCameraTransform();
 
     const x = player.worldX;
-    let drawY = player.worldY;
     const w = player.width;
     const h = player.height;
+
+    const now = performance.now();
+    const isFacingLeft = playerDir === 'left';
 
     let squashY = 1;
     let squashX = 1;
     let bounceY = 0;
+    let turnTilt = 0;
+    let rot = 0;
 
     if (player.isMoving) {
-        const now = performance.now();
         const elapsed = now - moveStartTime;
-        const dur = Math.max(55, CONFIG.MOVE_DURATION_MS - (gameSpeed - 1) * 10);
-        const t = Math.min(1, elapsed / dur);
-        squashY = CONFIG.SQUASH_MIN + (CONFIG.SQUASH_MAX - CONFIG.SQUASH_MIN) * Math.sin(t * Math.PI);
+        const duration = Math.max(100, CONFIG.MOVE_DURATION_MS - (gameSpeed - 1) * 12);
+        const t = Math.min(1, elapsed / duration);
+
+        const squashPhase = Math.min(1, t * 6);
+        const stretchPhase = Math.max(0, Math.min(1, (t - 0.15) / 0.7));
+        const landPhase = Math.max(0, t - 0.88);
+
+        squashY = 1;
+        if (squashPhase < 1) {
+            squashY = CONFIG.SQUASH_JUMP + (1 - CONFIG.SQUASH_JUMP) * squashPhase;
+        } else if (stretchPhase < 1 && stretchPhase > 0) {
+            squashY = 1 + (CONFIG.STRETCH_JUMP - 1) * Math.sin(stretchPhase * Math.PI);
+        } else if (landPhase > 0) {
+            const landT = Math.min(1, landPhase * 8);
+            squashY = CONFIG.LAND_SQUASH + (1 - CONFIG.LAND_SQUASH) * landT;
+        }
         squashX = 1 / squashY;
-        bounceY = Math.sin(t * Math.PI) * CONFIG.BOUNCE_PX * 1.2;
-    } else if (!player.isFalling) {
-        bounceY = Math.sin(animationFrame * 0.18) * CONFIG.BOUNCE_PX;
+
+        bounceY = Math.sin(t * Math.PI) * CONFIG.BOUNCE_PX * 1.5;
+
+        if (moveType === 'turn' && elapsed < CONFIG.TURN_POSE_MS) {
+            turnTilt = (elapsed / CONFIG.TURN_POSE_MS) * Math.PI * 0.15;
+        }
+    } else if (player.isFalling) {
+        rot = player.fallRotation;
+        turnTilt = 0;
+        squashY = 0.98;
+        squashX = 1.02;
+    } else {
+        bounceY = Math.sin(animationFrame * 0.18) * CONFIG.BOUNCE_PX * 0.5;
         const sway = Math.sin(animationFrame * 0.15) * CONFIG.BODY_SWAY_PX;
         squashX = 1 + sway * 0.02;
         squashY = 1 - Math.abs(sway) * 0.015;
     }
 
-    drawY += bounceY;
+    const drawW = w * squashX * CONFIG.CHAR_VISUAL_SCALE;
+    const drawH = h * squashY * CONFIG.CHAR_VISUAL_SCALE;
+    const drawYAnchor = player.worldY + player.height - drawH + bounceY;
+    const cx = x + w / 2;
 
-    if (charCache && charCache.width > 0) {
-        const drawW = w * squashX * CONFIG.CHAR_VISUAL_SCALE;
-        const drawH = h * squashY * CONFIG.CHAR_VISUAL_SCALE;
-        const drawYAnchor = player.worldY + player.height - drawH;
-        ctx.drawImage(charCache, x + (w - drawW) / 2, drawYAnchor + bounceY, drawW, drawH);
-    } else {
-        if (player.isFalling) ctx.globalAlpha = 0.85;
-        const vw = w * CONFIG.CHAR_VISUAL_SCALE * squashX;
-        const vh = h * CONFIG.CHAR_VISUAL_SCALE * squashY;
-        const fallbackY = player.worldY + player.height - vh + bounceY;
-        ctx.save();
-        ctx.translate(x + (w - vw) / 2, fallbackY);
-        ctx.scale(CONFIG.CHAR_VISUAL_SCALE * squashX, CONFIG.CHAR_VISUAL_SCALE * squashY);
-        drawBodyParts(ctx, w, h);
-        const headR = Math.min(w, h) * 0.28;
-        drawFallbackHead(ctx, w / 2, h * 0.32, headR);
-        ctx.restore();
-        ctx.globalAlpha = 1;
+    ctx.translate(cx, drawYAnchor + drawH / 2);
+    if (rot !== 0) ctx.rotate(rot);
+    if (turnTilt !== 0) ctx.rotate(turnTilt * (isFacingLeft ? 1 : -1));
+    ctx.translate(-cx, -(drawYAnchor + drawH / 2));
+
+    const drawLeft = x + (w - drawW) / 2;
+
+    if (player.isFalling) ctx.globalAlpha = 0.9;
+
+    const bodyCache = isFacingLeft ? bodyCacheLeft : bodyCacheRight;
+    if (bodyCache && bodyCache.width > 0) {
+        const cacheW = bodyCache.width / dpr;
+        const cacheH = bodyCache.height / dpr;
+        const pad = CONFIG.CACHE_PADDING || 50;
+        const contentW = cacheW - pad * 2;
+        const contentH = cacheH - pad * 2;
+        ctx.drawImage(bodyCache, pad, pad, contentW, contentH, drawLeft, drawYAnchor, drawW, drawH);
+    }
+
+    if (headCache && headCache.width > 0) {
+        const headOffset = (isFacingLeft ? -1 : 1) * CONFIG.HEAD_FRONT_OFFSET_PX;
+        const headSize = drawH * 0.72;
+        const headX = drawLeft + (drawW - headSize) / 2 + headOffset;
+        const headY = drawYAnchor + drawH * 0.08;
+        ctx.drawImage(headCache, 0, 0, headCache.width / dpr, headCache.height / dpr, headX, headY, headSize, headSize * (headCache.height / headCache.width));
+
+        if (player.isFalling && (now - player.fallStartTime) < CONFIG.DEATH_FACE_MS + 50) {
+            const headCx = headX + headSize / 2;
+            const headCy = headY + headSize * 0.38;
+            const headR = headSize * 0.28;
+            drawDeathOverlay(ctx, headCx, headCy, headR);
+        }
+    }
+
+    ctx.globalAlpha = 1;
+
+    if (debugMode && player) {
+        const charCx = x + w / 2;
+        const charCy = drawYAnchor + drawH / 2;
+        ctx.strokeStyle = '#FF0000';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(charCx - 12, charCy);
+        ctx.lineTo(charCx + 12, charCy);
+        ctx.moveTo(charCx, charCy - 12);
+        ctx.lineTo(charCx, charCy + 12);
+        ctx.stroke();
+        ctx.font = '10px "Segoe UI", sans-serif';
+        ctx.fillStyle = '#000';
+        ctx.textAlign = 'center';
+        ctx.fillText(`dir=${playerDir === 'left' ? 'LEFT' : 'RIGHT'}, frontSign=${playerDir === 'right' ? '+1' : '-1'}`, charCx, charCy - 18);
     }
 
     ctx.restore();
@@ -747,6 +1013,16 @@ function drawParticles() {
     ctx.restore();
 }
 
+function updateDebugPanel() {
+    if (!debugPanel || !debugMode) return;
+    if (gameState !== 'playing' || !player) {
+        debugPanel.textContent = '';
+        return;
+    }
+    const nextDir = getNextDir();
+    debugPanel.textContent = `dir: ${playerDir} | nextDir: ${nextDir || '-'}`;
+}
+
 function gameLoop() {
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
@@ -762,6 +1038,10 @@ function gameLoop() {
         drawStairs();
         drawParticles();
         drawPlayer();
+        if (player && player.isFalling) drawDeathPopup();
+        updateDebugPanel();
+    } else if (gameState === 'gameover') {
+        updateDebugPanel();
     }
 
     requestAnimationFrame(gameLoop);
@@ -776,13 +1056,14 @@ function updateGame() {
 
     if (player.isMoving) {
         const now = performance.now();
-        const duration = Math.max(55, CONFIG.MOVE_DURATION_MS - (gameSpeed - 1) * 10);
+        const duration = Math.max(100, CONFIG.MOVE_DURATION_MS - (gameSpeed - 1) * 12);
         const elapsed = now - moveStartTime;
         const t = Math.min(1, elapsed / duration);
         const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
+        const arcOffset = CONFIG.ARC_HEIGHT * 4 * t * (1 - t);
         player.worldX = moveStartX + (player.targetWorldX - moveStartX) * ease;
-        player.worldY = moveStartY + (player.targetWorldY - moveStartY) * ease;
+        player.worldY = moveStartY + (player.targetWorldY - moveStartY) * ease - arcOffset;
 
         if (t >= 1) {
             player.worldX = player.targetWorldX;
@@ -790,16 +1071,18 @@ function updateGame() {
             player.isMoving = false;
             score++;
             scoreDisplay.textContent = score;
+            createLandingParticles();
 
             if (score % CONFIG.SCORE_SPEED_UP === 0) {
                 gameSpeed = Math.min(4, gameSpeed + CONFIG.SPEED_INCREMENT * 0.2);
             }
-            generateNextStair();
+            generateNextStair(false);
         }
     }
 
     if (player.isFalling) {
         player.fallSpeed += 1;
+        player.fallRotation += 0.08;
         player.worldY += player.fallSpeed;
         if (player.worldY > CONFIG.GROUND_Y + canvasHeight * 2) gameOver();
     }

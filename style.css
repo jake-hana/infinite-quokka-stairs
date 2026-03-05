@@ -96,7 +96,7 @@ body {
 #touch-controls {
     flex-shrink: 0;
     display: flex;
-    gap: 24px;
+    gap: 16px;
     justify-content: center;
     align-items: center;
     padding: 20px 24px;
@@ -117,56 +117,107 @@ body {
 }
 
 #touch-controls button {
-    min-width: 72px;
-    min-height: 72px;
-    width: 72px;
-    height: 72px;
-    font-size: 36px;
     border: none;
-    border-radius: 50%;
-    background: linear-gradient(180deg, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.55) 100%);
-    box-shadow:
-        0 2px 4px rgba(0, 0, 0, 0.15),
-        0 6px 16px rgba(0, 0, 0, 0.12),
-        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    border-radius: 16px;
     cursor: pointer;
     touch-action: none;
     -webkit-tap-highlight-color: transparent;
     -webkit-user-select: none;
     user-select: none;
     transition: transform 0.08s ease, box-shadow 0.08s ease;
+    font-weight: bold;
 }
 
-#touch-controls button:hover {
-    background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.65) 100%);
+#btn-climb {
+    flex: 1;
+    min-width: 0;
+    min-height: 72px;
+    padding: 16px 24px;
+    font-size: 22px;
+    color: white;
+    background: linear-gradient(180deg, #27AE60, #1E8449);
     box-shadow:
-        0 3px 6px rgba(0, 0, 0, 0.18),
-        0 8px 20px rgba(0, 0, 0, 0.14),
+        0 4px 12px rgba(30, 132, 73, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+#btn-climb:hover {
+    background: linear-gradient(180deg, #2ECC71, #27AE60);
+    box-shadow:
+        0 5px 16px rgba(30, 132, 73, 0.5),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+#btn-climb:active {
+    transform: scale(0.97) translateY(2px);
+    box-shadow:
+        0 2px 6px rgba(30, 132, 73, 0.4),
+        inset 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+#btn-turn {
+    min-width: 100px;
+    min-height: 72px;
+    padding: 16px 20px;
+    font-size: 16px;
+    color: #1A5276;
+    background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(220,235,245,0.85) 100%);
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+#btn-turn:hover {
+    background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(230,240,250,0.95) 100%);
+    box-shadow:
+        0 3px 10px rgba(0, 0, 0, 0.15),
         inset 0 1px 0 rgba(255, 255, 255, 1);
 }
 
-#touch-controls button:active {
+#btn-turn:active {
     transform: scale(0.96) translateY(2px);
     box-shadow:
-        0 1px 2px rgba(0, 0, 0, 0.2),
-        0 2px 8px rgba(0, 0, 0, 0.15),
-        inset 0 2px 4px rgba(0, 0, 0, 0.1);
-    background: linear-gradient(180deg, rgba(240,248,255,0.9) 0%, rgba(220,240,250,0.7) 100%);
+        0 1px 4px rgba(0, 0, 0, 0.15),
+        inset 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+#debug-panel {
+    position: absolute;
+    bottom: calc(112px + max(20px, env(safe-area-inset-bottom)));
+    left: 8px;
+    font-size: 10px;
+    color: rgba(0,0,0,0.5);
+    font-family: monospace;
+    z-index: 20;
+    pointer-events: none;
+}
+
+#debug-panel.hidden {
+    display: none !important;
 }
 
 @media (max-width: 480px) {
-    #touch-controls button {
-        min-width: 72px;
-        min-height: 72px;
-        width: 72px;
-        height: 72px;
-        font-size: 32px;
+    #btn-climb {
+        font-size: 20px;
+        min-height: 68px;
+        padding: 14px 20px;
+    }
+
+    #btn-turn {
+        min-width: 90px;
+        min-height: 68px;
+        font-size: 14px;
+        padding: 14px 16px;
     }
 
     #touch-controls {
         padding: 16px 20px;
         padding-bottom: max(16px, calc(16px + env(safe-area-inset-bottom)));
-        gap: 28px;
+        gap: 12px;
+    }
+
+    #debug-panel {
+        bottom: calc(100px + max(16px, env(safe-area-inset-bottom)));
     }
 }
 
@@ -201,6 +252,8 @@ body {
     font-size: 13px;
     color: #34495E;
     margin-top: 12px;
+    text-align: center;
+    line-height: 1.5;
 }
 
 #start-btn {
