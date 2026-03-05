@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>무한의 계단 - 쿼카의 모험</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <div id="score-display">
+            Score: <span id="score">0</span>
+        </div>
+
+        <div id="canvas-wrapper">
+            <canvas id="game-canvas"></canvas>
+        </div>
+
+        <div id="start-screen">
+            <h1>무한의 계단</h1>
+            <p>쿼카의 모험</p>
+            <p class="instructions">다음 발판 방향에 맞춰 ← 또는 → 를 누르세요!</p>
+            <button id="start-btn">시작하기</button>
+        </div>
+
+        <div id="gameover-screen" class="hidden">
+            <h1>GAME OVER</h1>
+            <p>Final Score: <span id="final-score">0</span></p>
+            <button id="restart-btn">Restart</button>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
